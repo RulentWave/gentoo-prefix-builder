@@ -9,8 +9,6 @@ set -x
 #
 # I'm not sure this needs to be an export but if it works I don't really care
 export FORCE_UNSAFE_CONFIGURE=1
-dnf install -y man
-dnf group install -y c-development
 
 trap 'exit 1' TERM INT QUIT ABRT
 
