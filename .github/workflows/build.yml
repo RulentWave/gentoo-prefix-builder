@@ -1,0 +1,88 @@
+name: Build Gentoo RAP Prefix
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # daily at 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set build metadata
+        id: meta
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "tag=v${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "artifact=gentoo-prefix-rap-x86_64-${DATE}-${SHORT_SHA}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Build prefix in stage3 container
+        env:
+          ARTIFACT: ${{ steps.meta.outputs.artifact }}
+        run: |
+          set -euxo pipefail
+          chmod +x bootstrap-prefix-with-root.sh build.sh
+          docker run --rm \
+            --privileged \
+            -v "$PWD":/workspace:z \
+            -w /workspace \
+            -e ARTIFACT="$ARTIFACT" \
+            gentoo/stage3:nomultilib-systemd \
+            /workspace/build.sh
+
+      - name: Compute checksum
+        run: |
+          sha256sum "${{ steps.meta.outputs.artifact }}" \
+            > "${{ steps.meta.outputs.artifact }}.sha256"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Gentoo RAP Prefix ${{ steps.meta.outputs.date }} (${{ steps.meta.outputs.sha }})
+          prerelease: true
+          body: |
+            Daily build of a Gentoo RAP prefix for x86_64.
+
+            - Date: `${{ steps.meta.outputs.date }}`
+            - Commit: `${{ github.sha }}`
+            - Base image: `gentoo/stage3:nomultilib-systemd` (latest)
+
+            Install system-wide:
+            ```bash
+            sudo tar --xattrs --acls --absolute-names \
+              -xzvf ${{ steps.meta.outputs.artifact }} -C /
+            /usr/lib/gentoo-prefix/startprefix
+            ```
+          files: |
+            ${{ steps.meta.outputs.artifact }}
+            ${{ steps.meta.outputs.artifact }}.sha256
+          fail_on_unmatched_files: true
+
+      - name: Prune old releases (keep latest 14)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: 14
+        run: |
+          set -euo pipefail
+          # List releases newest-first, skip the most recent $KEEP, delete the rest (and their tags).
+          mapfile -t OLD < <(
+            gh release list \
+              --repo "$GITHUB_REPOSITORY" \
+              --limit 1000 \
+              --json tagName,createdAt \
+              --jq 'sort_by(.createdAt) | reverse | .['"$KEEP"':] | .[].tagName'
+          )
+          for tag in "${OLD[@]}"; do
+            echo "Deleting release and tag: $tag"
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          done
