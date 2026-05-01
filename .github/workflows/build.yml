@@ -20,7 +20,7 @@ jobs:
           docker run --rm --privileged -v "$PWD":/workspace:z -w /workspace \
             gentoo/stage3:nomultilib-systemd /workspace/build.sh stage1
       - name: Upload Stage 1 State
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prefix-stage1
           path: output.tar.gz
@@ -45,7 +45,7 @@ jobs:
           docker run --rm --privileged -v "$PWD":/workspace:z -w /workspace \
             gentoo/stage3:nomultilib-systemd /workspace/build.sh stage2
       - name: Upload Stage 2 State
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prefix-stage2
           path: output.tar.gz
